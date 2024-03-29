@@ -21,8 +21,10 @@ limitations under the License.
 
 #include "absl/types/optional.h"
 #include "tsl/lib/core/status_test_util.h"
+#include "tsl/platform/blocking_counter.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/test.h"
+#include "tsl/platform/threadpool.h"
 #include "tsl/platform/types.h"
 #include "tsl/profiler/lib/profiler_interface.h"
 #include "tsl/profiler/lib/traceme.h"
@@ -39,6 +41,7 @@ using ::tsl::Thread;
 using ::tsl::ThreadOptions;
 using ::tsl::profiler::TraceMe;
 using ::tsl::profiler::XEventVisitor;
+using ::tsl::profiler::XLineVisitor;
 using ::tsl::profiler::XPlaneVisitor;
 using ::tsl::profiler::XStatVisitor;
 
@@ -151,6 +154,47 @@ TEST(HostTracerTest, CollectsTraceMeEventsAsXSpace) {
   EXPECT_EQ(e6.Name(), "Iterator::XXX::YYY::ParallelMap");
 
   EXPECT_EQ(e6.DisplayName(), "Iterator::ParallelMap");
+}
+
+TEST(HostTracerTest, CollectEventsFromThreadPool) {
+  tsl::thread::ThreadPool thread_pool(/*env=*/Env::Default(),
+                                      /*name=*/"HostTracerTest",
+                                      /*num_threads=*/1);
+  tsl::BlockingCounter counter(1);
+  auto tracer = CreateHostTracer({});
+  TF_EXPECT_OK(tracer->Start());
+  thread_pool.Schedule([&counter] {
+    TraceMe traceme("hello");
+    counter.DecrementCount();
+  });
+  counter.Wait();
+  TF_EXPECT_OK(tracer->Stop());
+  tensorflow::profiler::XSpace space;
+  TF_EXPECT_OK(tracer->CollectData(&space));
+
+  EXPECT_THAT(space.planes(), testing::SizeIs(1));
+  XPlaneVisitor xplane(&space.planes(0));
+
+  bool has_record_event = false;
+  bool has_start_region_event = false;
+  bool has_end_region_event = false;
+
+  xplane.ForEachLine([&](const XLineVisitor& line) {
+    line.ForEachEvent([&](const XEventVisitor& event) {
+      if (event.Name() == tsl::profiler::kThreadpoolListenerRecord) {
+        has_record_event = true;
+      } else if (event.Name() ==
+                 tsl::profiler::kThreadpoolListenerStartRegion) {
+        has_start_region_event = true;
+      } else if (event.Name() == tsl::profiler::kThreadpoolListenerStopRegion) {
+        has_end_region_event = true;
+      }
+    });
+  });
+
+  EXPECT_TRUE(has_record_event);
+  EXPECT_TRUE(has_start_region_event);
+  EXPECT_TRUE(has_end_region_event);
 }
 
 }  // namespace
