@@ -105,6 +105,7 @@ cc_test(
 cc_library(
     name = "f16",
     hdrs = ["f16.h"],
+    deps = ["@FP16"],
 )
 
 cc_library(
