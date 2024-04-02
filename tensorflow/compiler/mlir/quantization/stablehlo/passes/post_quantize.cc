@@ -16,6 +16,7 @@ limitations under the License.
 #include <utility>
 
 #include "llvm/Support/Casting.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/QuantTypes.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributeInterfaces.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
@@ -23,6 +24,8 @@ limitations under the License.
 #include "mlir/IR/Matchers.h"  // from @llvm-project
 #include "mlir/IR/OpDefinition.h"  // from @llvm-project
 #include "mlir/IR/PatternMatch.h"  // from @llvm-project
+#include "mlir/IR/SymbolTable.h"  // from @llvm-project
+#include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Support/TypeID.h"  // from @llvm-project
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
@@ -30,6 +33,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/lite/quantization/ir/QuantOps.h"
 #include "tensorflow/compiler/mlir/lite/transforms/passes.h"
 #include "tensorflow/compiler/mlir/quantization/common/quantization_lib/quantization_utils.h"
+#include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 
 namespace mlir::quant::stablehlo {
 
@@ -133,6 +137,31 @@ class ConvertQuantizeCastToUniformQuantizePattern
   }
 };
 
+// Converts unquantized XlaCallModuleOps to func.call.
+class UnquantizedXlaCallModuleOpToCallOp
+    : public OpRewritePattern<TF::XlaCallModuleOp> {
+ public:
+  explicit UnquantizedXlaCallModuleOpToCallOp(MLIRContext* context)
+      : OpRewritePattern<TF::XlaCallModuleOp>(context) {}
+
+  LogicalResult matchAndRewrite(TF::XlaCallModuleOp op,
+                                PatternRewriter& rewriter) const override {
+    ModuleOp module_op = op->getParentOfType<ModuleOp>();
+    SymbolTable symbol_table(module_op);
+
+    func::FuncOp entry_func_op =
+        dyn_cast_or_null<func::FuncOp>(symbol_table.lookup(
+            op->getAttrOfType<FlatSymbolRefAttr>("_entry_function")
+                .getValue()));
+    if (!entry_func_op) return failure();
+
+    // Replace the XlaCallModuleOp with a new CallOp.
+    rewriter.setInsertionPoint(op);
+    rewriter.replaceOpWithNewOp<func::CallOp>(op, entry_func_op, op.getArgs());
+    return success();
+  }
+};
+
 void PostQuantizePass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   func::FuncOp func = getOperation();
@@ -147,7 +176,8 @@ void PostQuantizePass::runOnOperation() {
   RewritePatternSet patterns_2(&getContext());
   patterns_2
       .add<QuantizeConstPattern, ConvertQuantizeCastToUniformQuantizePattern,
-           ConvertDequantizeCastToUniformDequantizePattern>(ctx);
+           ConvertDequantizeCastToUniformDequantizePattern,
+           UnquantizedXlaCallModuleOpToCallOp>(ctx);
   if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns_2)))) {
     signalPassFailure();
   }

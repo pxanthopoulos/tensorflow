@@ -305,6 +305,42 @@ class QuantizedModelTest(test.TestCase, parameterized.TestCase):
     )
     return model
 
+  def _create_add_model(
+      self,
+      shape: Sequence[int],
+      saved_model_path: str,
+  ) -> module.Module:
+    class AddModel(module.Module):
+      """A simple model with a single add."""
+
+      def __init__(self):
+        pass
+
+      @def_function.function
+      def add(self, input_tensor: core.Tensor) -> Mapping[str, core.Tensor]:
+        """Performs an add operation.
+
+        Args:
+          input_tensor: Input tensor to perform add on.
+
+        Returns:
+          A map of: output key -> output result.
+        """
+        out = math_ops.add(input_tensor, input_tensor)
+        return {'output': out}
+
+    model = AddModel()
+    saved_model_save.save(
+        model,
+        saved_model_path,
+        signatures=model.add.get_concrete_function(
+            tensor_spec.TensorSpec(
+                shape=shape, dtype=dtypes.float32, name='input_tensor'
+            )
+        ),
+    )
+    return model
+
   # Prepares sample einsum input data shapes.
   # This function returns:
   # 1. Shape for input 1
