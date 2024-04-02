@@ -985,7 +985,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     )
 
     config = qc.QuantizationConfig(
-        weight_only_preset=qc.WeightOnlyPreset(),
+        weight_only_ptq_preset=qc.WeightOnlyPtqPreset(),
         tf_saved_model=qc.TfSavedModelConfig(tags=[tag_constants.SERVING]),
     )
     quantization.quantize_saved_model(
@@ -1077,7 +1077,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     )
 
     config = qc.QuantizationConfig(
-        weight_only_preset=qc.WeightOnlyPreset(),
+        weight_only_ptq_preset=qc.WeightOnlyPtqPreset(),
         tf_saved_model=qc.TfSavedModelConfig(tags=[tag_constants.SERVING]),
     )
     quantization.quantize_saved_model(
