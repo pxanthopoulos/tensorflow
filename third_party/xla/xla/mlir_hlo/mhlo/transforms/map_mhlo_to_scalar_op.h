@@ -1315,7 +1315,10 @@ struct MhloOpToStdScalarOp {
     static_assert(!std::is_same<MhloOpTy, mhlo::ConvertOp>::value);
     return mapOpOfType<MhloOpTy>(
         op.getLoc(), resultTypes, argTypes,
-        typename MhloOpTy::Adaptor(args, op->getAttrDictionary()), b);
+        typename MhloOpTy::Adaptor(args, op->getAttrDictionary(),
+                                   op->getPropertiesStorage(),
+                                   op->getRegions()),
+        b);
   }
   // Overload for mhlo::ConvertOp.
   static Value mapOpWithArgTypes(mhlo::ConvertOp op, ArrayRef<Type> resultTypes,
