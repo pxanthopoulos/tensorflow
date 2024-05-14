@@ -462,6 +462,28 @@ cc_test(
 )
 
 cc_test(
+    name="packing_profile_test",
+    srcs=[
+        "memory_management/profile.cc",
+        "memory_management/greedy_by_breadth_assignment.cc",
+        "memory_management/greedy_by_size_assignment.cc",
+        "memory_management/internal.cc",
+        "memory_management/min_cost_flow_assignment.cc",
+        "memory_management/types.cc",
+    ],
+    deps=[
+        ":memory_management",
+        ":shape",
+        ":status",
+        ":types",
+        ":util",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_test(
     name = "memory_management_internal_test",
     srcs = ["memory_management/internal_test.cc"],
     deps = [
