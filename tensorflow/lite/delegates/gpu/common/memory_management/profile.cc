@@ -18,47 +18,31 @@ void StoreToCsv(
     tflite::gpu::ObjectsAssignment<size_t>& assignment,
     std::vector<tflite::gpu::TensorUsageRecord<size_t>>& usage_records,
     std::string& algorithm) {
-  const char* path = std::getenv("TFLITE_CSV_PATH");
-  const char* name = std::getenv("TFLITE_TRACE_NAME");
+  const char* path = std::getenv("BASE_PATH");
+  const char* name = std::getenv("TRACE_NAME");
 
-  if (path && name) {
-    std::string path_string = std::string(path);
-    std::string filename = std::string(name) + "-in.csv";
+  if (!(path && name)) {
+    std::cerr << "ERROR: One or more environment variables not set!"
+              << std::endl;
+    exit(1);
+  }
 
-    std::string new_path =
-        path_string + "/" + "tflite-csv-in" + "/" + algorithm + "/";
-    std::ofstream outfile_in(new_path + filename, std::ios::trunc);
+  std::string path_string = std::string(path);
+  std::string filename = std::string(name) + "-out.csv";
+  std::string new_path = path_string + "/csv-out/";
+  std::ofstream outfile_out(new_path + filename, std::ios::trunc);
 
-    if (outfile_in.is_open()) {
-      outfile_in << "id,lower,upper,size" << std::endl;
-      for (size_t i = 0; i < assignment.object_ids.size(); ++i) {
-        outfile_in << i << "," << usage_records[i].first_task << ","
-                   << usage_records[i].last_task + 1 << ","
-                   << usage_records[i].tensor_size << std::endl;
-      }
-      outfile_in.close();
-    } else {
-      std::cout << "Could not open file: " << new_path << filename << std::endl;
+  if (outfile_out.is_open()) {
+    outfile_out << "id,lower,upper,size,offset" << std::endl;
+    for (size_t i = 0; i < assignment.object_ids.size(); ++i) {
+      outfile_out << i << "," << usage_records[i].first_task << ","
+                  << usage_records[i].last_task + 1 << ","
+                  << usage_records[i].tensor_size << "," << offsets.offsets[i]
+                  << std::endl;
     }
-
-    filename = std::string(name) + "-out.csv";
-    new_path = path_string + "/" + "tflite-csv-out" + "/" + algorithm + "/";
-    std::ofstream outfile_out(new_path + filename, std::ios::trunc);
-
-    if (outfile_out.is_open()) {
-      outfile_out << "id,lower,upper,size,offset" << std::endl;
-      for (size_t i = 0; i < assignment.object_ids.size(); ++i) {
-        outfile_out << i << "," << usage_records[i].first_task << ","
-                    << usage_records[i].last_task + 1 << ","
-                    << usage_records[i].tensor_size << "," << offsets.offsets[i]
-                    << std::endl;
-      }
-      outfile_out.close();
-    } else {
-      std::cout << "Could not open file: " << new_path << filename << std::endl;
-    }
+    outfile_out.close();
   } else {
-    std::cout << "One or both environment variables not found." << std::endl;
+    std::cout << "Could not open file: " << new_path << filename << std::endl;
   }
 }
 
@@ -98,44 +82,23 @@ void fillTensorUsageRecord(
   file.close();
 }
 
-void StoreTensorToObject(
-    const tflite::gpu::ObjectsAssignment<size_t>& assignment,
-    std::string& algorithm) {
-  const char* path = std::getenv("TFLITE_CSV_PATH");
-  const char* name = std::getenv("TFLITE_TRACE_NAME");
-
-  if (path && name) {
-    std::string path_string = std::string(path);
-    std::string filename = std::string(name) + "-assignment.txt";
-    std::string new_path =
-        path_string + "/" + "tflite-csv-out" + "/" + algorithm + "/";
-    std::ofstream outfile_out(new_path + filename, std::ios::trunc);
-
-    if (outfile_out.is_open()) {
-      outfile_out << assignment.object_ids[0];
-      for (size_t i = 1; i < assignment.object_ids.size(); ++i) {
-        outfile_out << "," << assignment.object_ids[i];
-      }
-      outfile_out << std::endl;
-      outfile_out << assignment.object_sizes[0];
-      for (size_t i = 1; i < assignment.object_sizes.size(); ++i) {
-        outfile_out << "," << assignment.object_sizes[i];
-      }
-      outfile_out.close();
-    } else {
-      std::cout << "Could not open file: " << new_path << filename << std::endl;
-    }
-  } else {
-    std::cout << "One or both environment variables not found." << std::endl;
-  }
-}
-
 int main(int argc, char** argv) {
   if (argc != 3) {
     std::cerr << "Usage: " << argv[0]
               << " <absolute_path_to_csv_file> <algorithm>" << std::endl;
     return 1;
   }
+
+  const char* path = std::getenv("BASE_PATH");
+  const char* name = std::getenv("TRACE_NAME");
+
+  if (!(path && name)) {
+    std::cerr << "ERROR: One or more environment variables not set!"
+              << std::endl;
+    return 1;
+  }
+
+  std::string path_string = std::string(path);
 
   std::string filepath = argv[1];
   std::string algorithm = argv[2];
@@ -146,6 +109,7 @@ int main(int argc, char** argv) {
 
   tflite::gpu::ObjectsAssignment<size_t> assignment;
 
+  std::chrono::microseconds duration;
   if (algorithm == "equality") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::EqualityAssignmentWithHash(usage_records, &assignment) !=
@@ -155,16 +119,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else if (algorithm == "greedy-breadth") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::GreedyByBreadthAssignment(usage_records, &assignment) !=
@@ -174,16 +130,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else if (algorithm == "greedy-size") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::GreedyBySizeDistPriorityAssignment(
@@ -193,16 +141,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else if (algorithm == "greedy-inorder") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::GreedyInOrderAssignment(usage_records, &assignment) !=
@@ -212,16 +152,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else if (algorithm == "mincostflow") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::MinCostFlowAssignment(usage_records, &assignment) !=
@@ -230,16 +162,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else if (algorithm == "naive") {
     auto start = std::chrono::high_resolution_clock::now();
     if (tflite::gpu::NaiveAssignment(usage_records, &assignment) !=
@@ -248,16 +172,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
+    duration =
         std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::ofstream timefile(algorithm + "-times.csv", std::ios::app);
-    if (timefile.is_open()) {
-      timefile << duration.count() << ",";
-      timefile.close();
-    } else {
-      std::cout << "Could not open file " << algorithm << "-times.csv"
-                << std::endl;
-    }
   } else {
     std::cerr << "Invalid algorithm, choose from equality, greedy-breadth, "
                  "greedy-size, greedy-inorder, mincostflow and naive."
@@ -265,9 +181,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  std::ofstream timefile(path_string + "/" + "time/time.csv", std::ios::app);
+  if (timefile.is_open()) {
+    timefile << duration.count() << ",";
+    timefile.close();
+  } else {
+    std::cout << "Could not open file" << path_string + "/" + "time/time.csv"
+              << std::endl;
+  }
+
   tflite::gpu::OffsetsAssignment offsets = ObjectsToOffsets(assignment);
 
   StoreToCsv(offsets, assignment, usage_records, algorithm);
-
-  //   StoreTensorToObject(assignment, algorithm);
 }
