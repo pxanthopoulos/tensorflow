@@ -43,6 +43,7 @@ void StoreToCsv(
     outfile_out.close();
   } else {
     std::cout << "Could not open file: " << new_path << filename << std::endl;
+    exit(1);
   }
 }
 
@@ -52,7 +53,7 @@ void fillTensorUsageRecord(
   std::ifstream file(filepath);
   if (!file.is_open()) {
     std::cerr << "Error: Unable to open file " << filepath << std::endl;
-    return;
+    exit(1);
   }
 
   std::string header;
