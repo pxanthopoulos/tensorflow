@@ -89,17 +89,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const char* path = std::getenv("BASE_PATH");
-  const char* name = std::getenv("TRACE_NAME");
-
-  if (!(path && name)) {
-    std::cerr << "ERROR: One or more environment variables not set!"
-              << std::endl;
-    return 1;
-  }
-
-  std::string path_string = std::string(path);
-
   std::string filepath = argv[1];
   std::string algorithm = argv[2];
 
@@ -181,14 +170,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::ofstream timefile(path_string + "/" + "time/time.csv", std::ios::app);
-  if (timefile.is_open()) {
-    timefile << duration.count() << ",";
-    timefile.close();
-  } else {
-    std::cout << "Could not open file" << path_string + "/" + "time/time.csv"
-              << std::endl;
-  }
+  std::cout << duration.count();
 
   tflite::gpu::OffsetsAssignment offsets = ObjectsToOffsets(assignment);
 
